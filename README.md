@@ -20,6 +20,24 @@
 
 
 
- 感谢这个解决：
+## 去掉自动
+ auto-restart:
+    needs: record
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      # ⚠️ 你原来这里引用了 steps.gate.outputs.run，但没有名为 gate 的步骤，会永远跳过
+      # 如果你就是想总是自触发一次（不建议），去掉 if 条件；否则请真正加上 gate 步骤。
+      - name: Trigger self
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: record.yml
+          ref: ${{ github.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+
+## 感谢这个解决：
  https://gist.github.com/nis267/74c6315f6dbd24a0b8889acdd08789e6 提供思路
     
