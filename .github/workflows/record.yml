@@ -1,12 +1,11 @@
 name: record
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:        # 手动触发
   schedule:
-    # 可选：如果你想每天在北京时间 08:30 和 14:30 运行，请改成下面两行：
-    # - cron: "30 0 * * *"   # 08:30 CST (UTC+8) = 00:30 UTC
-    # - cron: "30 6 * * *"   # 14:30 CST (UTC+8) = 06:30 UTC
-    - cron: "0 23 * * *"     # 当前这一行实际是每天 UTC 23:00（北京时间次日 07:00）
+    # 北京时间 08:30 = UTC 00:30；14:30 = UTC 06:30
+    - cron: "0 23 * * *"
+    
 
 permissions:
   contents: read
@@ -20,32 +19,37 @@ concurrency:
 jobs:
   record:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360   # 最长录制 6 小时
 
     steps:
       - name: Show time
         run: date -u && date
-
+        
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ✅ 改用官方 Tailscale Action（OAuth），不要再传 hostname
-      - name: Tailscale (OAuth)
-        uses: tailscale/github-action@v4
+      - name: Setup Tailscale with optimized device management
+        uses: huggingface/tailscale-action@main
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          # 这些 tag 必须在你的 Tailscale ACL 中被允许
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: rtsp-recorder-github
           tags: tag:github-actions,tag:recorder
-          # 可选：固定版本或使用 latest
-          # version: latest
-          args: ${{ secrets.TAILSCALE_EXIT_NODE && format('--exit-node={0}', secrets.TAILSCALE_EXIT_NODE) || '' }}
-      
+
+      - name: Configure Exit Node (if set)
+        if: ${{ secrets.TAILSCALE_EXIT_NODE != '' }}
+        run: |
+          echo "Setting exit node to: ${{ secrets.TAILSCALE_EXIT_NODE }}"
+          sudo tailscale set --exit-node=${{ secrets.TAILSCALE_EXIT_NODE }}
+          echo "Verifying exit node..."
+          tailscale status
+          echo "Current public IP:"
+          curl -s ifconfig.me || curl -s icanhazip.com
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg inotify-tools curl jq netcat-openbsd
-
+          
       - name: Verify ffmpeg RTSP support
         run: |
           echo "Checking ffmpeg version and protocols:"
@@ -66,22 +70,13 @@ jobs:
       - name: Run recorder
         env:
           RTSP_URL: ${{ secrets.RTSP_URL }}
+          # MUNFAQQIHA method credentials
           TERABOX_JSTOKEN: ${{ secrets.TERABOX_JSTOKEN }}
           TERABOX_BDSTOKEN: ${{ secrets.TERABOX_BDSTOKEN }}
           TERABOX_COOKIE: ${{ secrets.TERABOX_COOKIE }}
           TERABOX_REMOTE_FOLDER: ${{ vars.TERABOX_REMOTE_FOLDER || '/rtsp-videos' }}
+          # DingTalk notification webhook
           DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         run: |
           chmod +x ./record.sh ./terabox_upload_simple.sh
           ./record.sh
-
-      # 🔍 失败时把 tailscaled 日志打出来，快速定位（非常有用）
-      - name: Dump tailscaled log on failure
-        if: failure()
-        run: |
-          if [ -f "$HOME/tailscaled.log" ]; then
-            echo "=== tailscaled.log ==="
-            cat "$HOME/tailscaled.log"
-          else
-            echo "tailscaled.log not found"
-          fi
