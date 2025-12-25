@@ -1,3 +1,4 @@
+
 name: record
 
 on:
@@ -40,8 +41,13 @@ jobs:
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
           if [ -n "$EXIT_NODE" ]; then
+            echo "Waiting for Tailscale to be ready..."
+            sleep 5
+            echo "Current Tailscale status:"
+            tailscale status || true
+            echo ""
             echo "Setting exit node to: $EXIT_NODE"
-            sudo tailscale set --exit-node="$EXIT_NODE"
+            sudo tailscale up --exit-node="$EXIT_NODE" --accept-routes --reset
             echo "Verifying exit node..."
             tailscale status
             echo "Current public IP:"
