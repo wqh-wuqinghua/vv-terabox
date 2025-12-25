@@ -39,7 +39,8 @@ jobs:
           tags: tag:github-actions,tag:recorder
           # 可选：固定版本或使用 latest
           # version: latest
-
+          args: ${{ secrets.TAILSCALE_EXIT_NODE && format('--exit-node={0}', secrets.TAILSCALE_EXIT_NODE) || '' }}
+      
       - name: Install dependencies
         run: |
           sudo apt-get update
