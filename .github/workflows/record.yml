@@ -1,4 +1,3 @@
-
 name: record
 
 on:
@@ -29,12 +28,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Tailscale with optimized device management
-        uses: huggingface/tailscale-action@main
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v3
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          hostname: rtsp-recorder-github
-          tags: tag:github-actions,tag:recorder
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
 
       - name: Configure Exit Node (if set)
         env:
