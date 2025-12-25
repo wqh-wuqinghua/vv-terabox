@@ -1,3 +1,4 @@
+
 name: record
 
 on:
@@ -36,14 +37,19 @@ jobs:
           tags: tag:github-actions,tag:recorder
 
       - name: Configure Exit Node (if set)
-        if: ${{ secrets.TAILSCALE_EXIT_NODE != '' }}
+        env:
+          EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
-          echo "Setting exit node to: ${{ secrets.TAILSCALE_EXIT_NODE }}"
-          sudo tailscale set --exit-node=${{ secrets.TAILSCALE_EXIT_NODE }}
-          echo "Verifying exit node..."
-          tailscale status
-          echo "Current public IP:"
-          curl -s ifconfig.me || curl -s icanhazip.com
+          if [ -n "$EXIT_NODE" ]; then
+            echo "Setting exit node to: $EXIT_NODE"
+            sudo tailscale set --exit-node="$EXIT_NODE"
+            echo "Verifying exit node..."
+            tailscale status
+            echo "Current public IP:"
+            curl -s ifconfig.me || curl -s icanhazip.com
+          else
+            echo "No exit node configured, skipping..."
+          fi
 
       - name: Install dependencies
         run: |
