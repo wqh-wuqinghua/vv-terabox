@@ -30,14 +30,15 @@ jobs:
 
       - name: Setup Tailscale
         env:
-          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
           # Install Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
 
-          # Start Tailscale with authkey
-          sudo tailscale up --authkey="$TS_AUTHKEY" --hostname=github-recorder --accept-routes
+          # Start Tailscale with OAuth (format: tskey-client-<id>?secret=<secret>)
+          sudo tailscale up --authkey="tskey-client-${TS_OAUTH_CLIENT_ID}?secret=${TS_OAUTH_SECRET}" --hostname=github-recorder --accept-routes
 
           # Set exit node if configured
           if [ -n "$EXIT_NODE" ]; then
