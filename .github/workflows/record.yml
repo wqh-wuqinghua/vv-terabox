@@ -29,17 +29,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:github-actions
-          args: ${{ secrets.TAILSCALE_EXIT_NODE && format('--exit-node={0} --accept-routes', secrets.TAILSCALE_EXIT_NODE) || '' }}
-
-      - name: Verify Tailscale connection
         env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
+          # Install Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+          # Start Tailscale with authkey
+          sudo tailscale up --authkey="$TS_AUTHKEY" --hostname=github-recorder --accept-routes
+
+          # Set exit node if configured
+          if [ -n "$EXIT_NODE" ]; then
+            echo "Setting exit node to: $EXIT_NODE"
+            sudo tailscale set --exit-node="$EXIT_NODE"
+          fi
+
+          # Verify connection
           echo "Tailscale status:"
           tailscale status
           echo ""
