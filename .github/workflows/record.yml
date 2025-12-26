@@ -1,4 +1,3 @@
-
 name: record
 
 on:
@@ -35,26 +34,17 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:github-actions
+          args: ${{ secrets.TAILSCALE_EXIT_NODE && format('--exit-node={0} --accept-routes', secrets.TAILSCALE_EXIT_NODE) || '' }}
 
-      - name: Configure Exit Node (if set)
+      - name: Verify Tailscale connection
         env:
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
-          if [ -n "$EXIT_NODE" ]; then
-            echo "Waiting for Tailscale to be ready..."
-            sleep 5
-            echo "Current Tailscale status:"
-            tailscale status || true
-            echo ""
-            echo "Setting exit node to: $EXIT_NODE"
-            sudo tailscale up --exit-node="$EXIT_NODE" --accept-routes --reset
-            echo "Verifying exit node..."
-            tailscale status
-            echo "Current public IP:"
-            curl -s ifconfig.me || curl -s icanhazip.com
-          else
-            echo "No exit node configured, skipping..."
-          fi
+          echo "Tailscale status:"
+          tailscale status
+          echo ""
+          echo "Current public IP:"
+          curl -s ifconfig.me || curl -s icanhazip.com
 
       - name: Install dependencies
         run: |
