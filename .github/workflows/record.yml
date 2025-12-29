@@ -49,20 +49,18 @@ jobs:
           fi
           echo "Got access token"
 
-          # Create ephemeral auth key
+          # Create ephemeral auth key (without tags)
           echo "Creating ephemeral auth key..."
           KEY_RESPONSE=$(curl -s -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"tags":["tag:github-actions"]}}}}')
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true}}}}')
 
           echo "API Response: $KEY_RESPONSE"
           AUTH_KEY=$(echo "$KEY_RESPONSE" | jq -r '.key')
 
           if [ -z "$AUTH_KEY" ] || [ "$AUTH_KEY" = "null" ]; then
             echo "Failed to create auth key"
-            echo "Check: 1) OAuth client has 'devices:write' permission"
-            echo "       2) ACL has 'tag:github-actions' in tagOwners"
             exit 1
           fi
           echo "Created auth key"
