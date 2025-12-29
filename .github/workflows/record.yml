@@ -37,8 +37,33 @@ jobs:
           # Install Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
 
-          # Start Tailscale with OAuth (format: tskey-client-<id>?secret=<secret>)
-          sudo tailscale up --authkey="tskey-client-${TS_OAUTH_CLIENT_ID}?secret=${TS_OAUTH_SECRET}" --hostname=github-recorder --accept-routes
+          # Get OAuth access token
+          echo "Getting OAuth access token..."
+          ACCESS_TOKEN=$(curl -s -X POST "https://api.tailscale.com/api/v2/oauth/token" \
+            -u "${TS_OAUTH_CLIENT_ID}:${TS_OAUTH_SECRET}" \
+            -d "grant_type=client_credentials" | jq -r '.access_token')
+
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "Failed to get access token"
+            exit 1
+          fi
+          echo "Got access token"
+
+          # Create ephemeral auth key
+          echo "Creating ephemeral auth key..."
+          AUTH_KEY=$(curl -s -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"tags":["tag:github-actions"]}}}}' | jq -r '.key')
+
+          if [ -z "$AUTH_KEY" ] || [ "$AUTH_KEY" = "null" ]; then
+            echo "Failed to create auth key"
+            exit 1
+          fi
+          echo "Created auth key"
+
+          # Start Tailscale
+          sudo tailscale up --authkey="$AUTH_KEY" --hostname=github-recorder --accept-routes
 
           # Set exit node if configured
           if [ -n "$EXIT_NODE" ]; then
