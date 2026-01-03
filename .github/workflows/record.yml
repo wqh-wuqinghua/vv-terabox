@@ -34,22 +34,13 @@ jobs:
           authkey: ${{ secrets.TS_AUTHKEY }}
           hostname: github-recorder
 
-      - name: Set exit node and verify
+      - name: Set exit node
         env:
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
-          # Set exit node if configured
           if [ -n "$EXIT_NODE" ]; then
-            echo "Setting exit node to: $EXIT_NODE"
             sudo tailscale set --exit-node="$EXIT_NODE" --accept-routes
           fi
-
-          # Verify connection
-          echo "Tailscale status:"
-          tailscale status
-          echo ""
-          echo "Current public IP:"
-          curl -s ifconfig.me || curl -s icanhazip.com
 
       - name: Install dependencies
         run: |
