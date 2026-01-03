@@ -49,12 +49,12 @@ jobs:
           fi
           echo "Got access token"
 
-          # Create ephemeral auth key
+          # Create ephemeral auth key (without tags - device will be owned by OAuth client owner)
           echo "Creating ephemeral auth key..."
           KEY_RESPONSE=$(curl -s -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
             -H "Authorization: Bearer ${ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"tags":["tag:github-actions"]}}}}')
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true}}}}')
 
           echo "API Response: $KEY_RESPONSE"
           AUTH_KEY=$(echo "$KEY_RESPONSE" | jq -r '.key')
