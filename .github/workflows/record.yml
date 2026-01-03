@@ -29,49 +29,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+          hostname: github-recorder
+
+      - name: Set exit node and verify
         env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
-          # Install Tailscale
-          curl -fsSL https://tailscale.com/install.sh | sh
-
-          # Get OAuth access token
-          echo "Getting OAuth access token..."
-          ACCESS_TOKEN=$(curl -s -X POST "https://api.tailscale.com/api/v2/oauth/token" \
-            -u "${TS_OAUTH_CLIENT_ID}:${TS_OAUTH_SECRET}" \
-            -d "grant_type=client_credentials" | jq -r '.access_token')
-
-          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-            echo "Failed to get access token"
-            exit 1
-          fi
-          echo "Got access token"
-
-          # Create ephemeral auth key with tag
-          echo "Creating ephemeral auth key..."
-          KEY_RESPONSE=$(curl -s -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
-            -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:github-actions"]}}}}')
-
-          echo "API Response: $KEY_RESPONSE"
-          AUTH_KEY=$(echo "$KEY_RESPONSE" | jq -r '.key')
-
-          if [ -z "$AUTH_KEY" ] || [ "$AUTH_KEY" = "null" ]; then
-            echo "Failed to create auth key"
-            exit 1
-          fi
-          echo "Created auth key"
-
-          # Start Tailscale
-          sudo tailscale up --authkey="$AUTH_KEY" --hostname=github-recorder --accept-routes
-
           # Set exit node if configured
           if [ -n "$EXIT_NODE" ]; then
             echo "Setting exit node to: $EXIT_NODE"
-            sudo tailscale set --exit-node="$EXIT_NODE"
+            sudo tailscale set --exit-node="$EXIT_NODE" --accept-routes
           fi
 
           # Verify connection
