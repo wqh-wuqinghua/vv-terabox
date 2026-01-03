@@ -31,9 +31,7 @@ jobs:
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:github-actions
+          authkey: ${{ secrets.TS_AUTHKEY }}
           hostname: github-recorder
 
       - name: Set exit node and verify
