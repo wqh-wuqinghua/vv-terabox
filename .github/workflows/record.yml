@@ -34,12 +34,32 @@ jobs:
           authkey: ${{ secrets.TS_AUTHKEY }}
           hostname: github-recorder
 
-      - name: Set exit node
+      - name: Set exit node and verify routing
         env:
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
           if [ -n "$EXIT_NODE" ]; then
+            echo "🔧 Configuring Tailscale exit node: $EXIT_NODE"
             sudo tailscale set --exit-node="$EXIT_NODE" --accept-routes
+            
+            echo "⏳ Waiting for routes to propagate..."
+            sleep 5
+            
+            echo "📡 Verifying Tailscale status:"
+            tailscale status
+            
+            echo ""
+            echo "🌍 Checking public IP (should be exit node IP):"
+            curl -s https://api.ipify.org
+            echo ""
+            curl -s https://ifconfig.me
+            echo ""
+            
+            echo "✅ Exit node configured. All traffic will use fixed IP."
+          else
+            echo "⚠️  WARNING: TAILSCALE_EXIT_NODE not set!"
+            echo "Without exit node, GitHub Actions will use random IPs and TeraBox may block uploads."
+            echo "Please set TAILSCALE_EXIT_NODE secret to fix IP address."
           fi
 
       - name: Install dependencies
@@ -63,6 +83,11 @@ jobs:
           echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
           echo "Notification configuration:"
           echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
+          echo ""
+          echo "🔍 Final IP verification before recording:"
+          echo "Public IP that TeraBox will see:"
+          curl -s https://api.ipify.org
+          echo ""
 
       - name: Run recorder
         env:
