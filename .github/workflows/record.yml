@@ -1,12 +1,10 @@
 name: record
 
 on:
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:
   schedule:
-    # 北京时间 08:30 = UTC 00:30；14:30 = UTC 06:30
-    - cron: "0 23 * * *"
-    
-
+   - cron: "30 4 * * *"
+   
 permissions:
   contents: read
   actions: write
@@ -19,54 +17,28 @@ concurrency:
 jobs:
   record:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # 最长录制 6 小时
+    timeout-minutes: 360
 
     steps:
       - name: Show time
         run: date -u && date
-        
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Tailscale
-        uses: tailscale/github-action@v2
+      # ✅ 先连接 Tailscale（不启用 exit node，保持 GitHub 网络用于安装依赖）
+      - name: Tailscale (OAuth)
+        uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          hostname: github-recorder
-
-      - name: Set exit node and verify routing
-        env:
-          EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
-        run: |
-          if [ -n "$EXIT_NODE" ]; then
-            echo "🔧 Configuring Tailscale exit node: $EXIT_NODE"
-            sudo tailscale set --exit-node="$EXIT_NODE" --accept-routes
-            
-            echo "⏳ Waiting for routes to propagate..."
-            sleep 5
-            
-            echo "📡 Verifying Tailscale status:"
-            tailscale status
-            
-            echo ""
-            echo "🌍 Checking public IP (should be exit node IP):"
-            curl -s https://api.ipify.org
-            echo ""
-            curl -s https://ifconfig.me
-            echo ""
-            
-            echo "✅ Exit node configured. All traffic will use fixed IP."
-          else
-            echo "⚠️  WARNING: TAILSCALE_EXIT_NODE not set!"
-            echo "Without exit node, GitHub Actions will use random IPs and TeraBox may block uploads."
-            echo "Please set TAILSCALE_EXIT_NODE secret to fix IP address."
-          fi
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions,tag:recorder
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg inotify-tools curl jq netcat-openbsd
-          
+
       - name: Verify ffmpeg RTSP support
         run: |
           echo "Checking ffmpeg version and protocols:"
@@ -83,22 +55,35 @@ jobs:
           echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
           echo "Notification configuration:"
           echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
-          echo ""
-          echo "🔍 Final IP verification before recording:"
-          echo "Public IP that TeraBox will see:"
-          curl -s https://api.ipify.org
-          echo ""
+
+      # ✅ 依赖安装完成后，启用 Exit Node（让 TeraBox 请求走家庭 IP）
+      - name: Enable Exit Node
+        run: |
+          echo "🔄 Switching to home network exit node..."
+          sudo tailscale up --exit-node=${{ secrets.TS_EXIT_NODE }} --exit-node-allow-lan-access --accept-routes
+          echo "✅ Exit node enabled"
+          echo "🌐 Current public IP (should be home IP):"
+          curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
 
       - name: Run recorder
         env:
           RTSP_URL: ${{ secrets.RTSP_URL }}
-          # MUNFAQQIHA method credentials
           TERABOX_JSTOKEN: ${{ secrets.TERABOX_JSTOKEN }}
           TERABOX_BDSTOKEN: ${{ secrets.TERABOX_BDSTOKEN }}
           TERABOX_COOKIE: ${{ secrets.TERABOX_COOKIE }}
           TERABOX_REMOTE_FOLDER: ${{ vars.TERABOX_REMOTE_FOLDER || '/rtsp-videos' }}
-          # DingTalk notification webhook
           DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         run: |
           chmod +x ./record.sh ./terabox_upload_simple.sh
           ./record.sh
+
+      # 🔍 失败时把 tailscaled 日志打出来，快速定位（非常有用）
+      - name: Dump tailscaled log on failure
+        if: failure()
+        run: |
+          if [ -f "$HOME/tailscaled.log" ]; then
+            echo "=== tailscaled.log ==="
+            cat "$HOME/tailscaled.log"
+          else
+            echo "tailscaled.log not found"
+          fi
