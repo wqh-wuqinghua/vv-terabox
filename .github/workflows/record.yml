@@ -60,7 +60,7 @@ jobs:
       - name: Enable Exit Node
         run: |
           echo "🔄 Switching to home network exit node..."
-          sudo tailscale up --exit-node=${{ secrets.TS_EXIT_NODE }} --exit-node-allow-lan-access --accept-routes
+          sudo tailscale up --exit-node=${{ secrets.TAILSCALE_EXIT_NODE }} --exit-node-allow-lan-access --accept-routes
           echo "✅ Exit node enabled"
           echo "🌐 Current public IP (should be home IP):"
           curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
