@@ -58,9 +58,19 @@ jobs:
 
       # ✅ 依赖安装完成后，启用 Exit Node（让 TeraBox 请求走家庭 IP）
       - name: Enable Exit Node
+        env:
+          EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
         run: |
-          echo "🔄 Switching to home network exit node..."
-          sudo tailscale up --exit-node=${{ secrets.TAILSCALE_EXIT_NODE }} --exit-node-allow-lan-access --accept-routes
+          if [[ -z "$EXIT_NODE" ]]; then
+            echo "⚠️ TAILSCALE_EXIT_NODE not configured, skipping exit node setup"
+            echo "🌐 Current public IP (GitHub runner IP):"
+            curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
+            exit 0
+          fi
+
+          echo "🔄 Switching to home network exit node: $EXIT_NODE"
+          # 使用 tailscale set 单独修改 exit-node，避免需要重复所有参数
+          sudo tailscale set --exit-node="$EXIT_NODE"
           echo "✅ Exit node enabled"
           echo "🌐 Current public IP (should be home IP):"
           curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
