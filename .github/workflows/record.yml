@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
    - cron: "30 4 * * *"
-   
+
 permissions:
   contents: read
   actions: write
@@ -26,14 +26,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ✅ 先连接 Tailscale（不启用 exit node，保持 GitHub 网络用于安装依赖）
-      - name: Tailscale (OAuth)
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:github-actions,tag:recorder
-
+      # ✅ 先安装依赖（使用 GitHub 网络，速度快）
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -46,17 +39,15 @@ jobs:
           echo "Supported protocols:"
           ffmpeg -protocols 2>/dev/null | grep rtsp || echo "RTSP not found in protocols"
 
-      - name: Setup TeraBox credentials
-        run: |
-          echo "TeraBox configuration loaded from secrets"
-          echo "MUNFAQQIHA method credentials:"
-          echo "  TERABOX_JSTOKEN is set: ${{ secrets.TERABOX_JSTOKEN != '' }}"
-          echo "  TERABOX_BDSTOKEN is set: ${{ secrets.TERABOX_BDSTOKEN != '' }} (optional but recommended)"
-          echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
-          echo "Notification configuration:"
-          echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
+      # ✅ 依赖安装完成后，再连接 Tailscale
+      - name: Tailscale (OAuth)
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions,tag:recorder
 
-      # ✅ 依赖安装完成后，启用 Exit Node（让 TeraBox 请求走家庭 IP）
+      # ✅ 启用 Exit Node（让 TeraBox 请求走家庭 IP）
       - name: Enable Exit Node
         env:
           EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
@@ -69,11 +60,18 @@ jobs:
           fi
 
           echo "🔄 Switching to home network exit node: $EXIT_NODE"
-          # 使用 tailscale set 单独修改 exit-node，避免需要重复所有参数
           sudo tailscale set --exit-node="$EXIT_NODE"
           echo "✅ Exit node enabled"
           echo "🌐 Current public IP (should be home IP):"
           curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
+
+      - name: Setup TeraBox credentials
+        run: |
+          echo "TeraBox configuration loaded from secrets"
+          echo "  TERABOX_JSTOKEN is set: ${{ secrets.TERABOX_JSTOKEN != '' }}"
+          echo "  TERABOX_BDSTOKEN is set: ${{ secrets.TERABOX_BDSTOKEN != '' }} (optional)"
+          echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
+          echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
 
       - name: Run recorder
         env:
@@ -87,7 +85,6 @@ jobs:
           chmod +x ./record.sh ./terabox_upload_simple.sh
           ./record.sh
 
-      # 🔍 失败时把 tailscaled 日志打出来，快速定位（非常有用）
       - name: Dump tailscaled log on failure
         if: failure()
         run: |
