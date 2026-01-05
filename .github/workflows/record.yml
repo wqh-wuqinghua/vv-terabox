@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
    - cron: "30 4 * * *"
-
+   
 permissions:
   contents: read
   actions: write
@@ -26,7 +26,17 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ✅ 先安装依赖（使用 GitHub 网络，速度快）
+      # ✅ 改用官方 Tailscale Action（OAuth），不要再传 hostname
+      - name: Tailscale (OAuth)
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # 这些 tag 必须在你的 Tailscale ACL 中被允许
+          tags: tag:github-actions,tag:recorder
+          # 可选：固定版本或使用 latest
+          # version: latest
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -39,38 +49,14 @@ jobs:
           echo "Supported protocols:"
           ffmpeg -protocols 2>/dev/null | grep rtsp || echo "RTSP not found in protocols"
 
-      # ✅ 依赖安装完成后，再连接 Tailscale
-      - name: Tailscale (OAuth)
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:github-actions,tag:recorder
-
-      # ✅ 启用 Exit Node（让 TeraBox 请求走家庭 IP）
-      - name: Enable Exit Node
-        env:
-          EXIT_NODE: ${{ secrets.TAILSCALE_EXIT_NODE }}
-        run: |
-          if [[ -z "$EXIT_NODE" ]]; then
-            echo "⚠️ TAILSCALE_EXIT_NODE not configured, skipping exit node setup"
-            echo "🌐 Current public IP (GitHub runner IP):"
-            curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
-            exit 0
-          fi
-
-          echo "🔄 Switching to home network exit node: $EXIT_NODE"
-          sudo tailscale set --exit-node="$EXIT_NODE"
-          echo "✅ Exit node enabled"
-          echo "🌐 Current public IP (should be home IP):"
-          curl -s ifconfig.me || curl -s ipinfo.io/ip || echo "Could not determine IP"
-
       - name: Setup TeraBox credentials
         run: |
           echo "TeraBox configuration loaded from secrets"
+          echo "MUNFAQQIHA method credentials:"
           echo "  TERABOX_JSTOKEN is set: ${{ secrets.TERABOX_JSTOKEN != '' }}"
-          echo "  TERABOX_BDSTOKEN is set: ${{ secrets.TERABOX_BDSTOKEN != '' }} (optional)"
+          echo "  TERABOX_BDSTOKEN is set: ${{ secrets.TERABOX_BDSTOKEN != '' }} (optional but recommended)"
           echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
+          echo "Notification configuration:"
           echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
 
       - name: Run recorder
@@ -85,6 +71,7 @@ jobs:
           chmod +x ./record.sh ./terabox_upload_simple.sh
           ./record.sh
 
+      # 🔍 失败时把 tailscaled 日志打出来，快速定位（非常有用）
       - name: Dump tailscaled log on failure
         if: failure()
         run: |
