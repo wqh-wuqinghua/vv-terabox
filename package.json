@@ -1,0 +1,15 @@
+{
+  "name": "terabox-uploader",
+  "version": "1.0.0",
+  "description": "TeraBox uploader using Playwright browser automation",
+  "main": "terabox_upload_playwright.js",
+  "scripts": {
+    "upload": "node terabox_upload_playwright.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

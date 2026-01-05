@@ -148,11 +148,13 @@ kill_ffmpeg() {
 # 后台监控文件夹并上传到 TeraBox
 upload_loop() {
   echo "启动上传进程..."
-  inotifywait -m -e close_write --format '%w%f' "$output_folder" | while read FILE
+  inotifywait -m -e close_write --format '%w%f' "$output_folder" | while read -r FILE
   do
+    # 清理文件名中可能的特殊字符（回车、换行、百分号等）
+    FILE=$(echo "$FILE" | tr -d '\r\n%')
     echo "检测到新文件: $FILE"
-    # 使用MUNFAQQIHA的TeraBox上传脚本
-    if ./terabox_upload_simple.sh "$FILE"; then
+    # 使用 Playwright 浏览器自动化上传到 TeraBox
+    if node terabox_upload_playwright.js "$FILE"; then
       echo "上传成功，删除本地文件: $FILE"
       rm "$FILE"
     else
