@@ -124,12 +124,18 @@ async function uploadFile(filePath) {
     // Navigate to TeraBox
     log('Navigating to TeraBox...');
     await page.goto('https://www.terabox.com/main', {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 60000
     });
 
-    // Wait for page to fully load
-    await page.waitForTimeout(3000);
+    // Wait for page to be interactive
+    log('Waiting for page to load...');
+    await page.waitForLoadState('load', { timeout: 30000 }).catch(() => {
+      log('Load state timeout, continuing anyway...');
+    });
+
+    // Additional wait for dynamic content
+    await page.waitForTimeout(5000);
 
     // Take screenshot for debugging
     await page.screenshot({ path: '/tmp/terabox-before-upload.png' });
@@ -155,8 +161,8 @@ async function uploadFile(filePath) {
     if (TERABOX_REMOTE_FOLDER && TERABOX_REMOTE_FOLDER !== '/') {
       log(`Navigating to folder: ${TERABOX_REMOTE_FOLDER}`);
       const folderUrl = `https://www.terabox.com/main#/all?path=${encodeURIComponent(TERABOX_REMOTE_FOLDER)}`;
-      await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(2000);
+      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(3000);
     }
 
     // Find and click the upload button
@@ -272,8 +278,8 @@ async function uploadFile(filePath) {
     log('Final screenshot saved to /tmp/terabox-after-upload.png');
 
     // Verify file appears in the list (refresh and check)
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(3000);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(5000);
 
     // Check if file exists in the file list
     const fileExists = await page.evaluate((targetFileName) => {
