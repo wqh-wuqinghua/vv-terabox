@@ -37,10 +37,21 @@ jobs:
           # 可选：固定版本或使用 latest
           # version: latest
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg inotify-tools curl jq netcat-openbsd
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
 
       - name: Verify ffmpeg RTSP support
         run: |
@@ -52,9 +63,7 @@ jobs:
       - name: Setup TeraBox credentials
         run: |
           echo "TeraBox configuration loaded from secrets"
-          echo "MUNFAQQIHA method credentials:"
-          echo "  TERABOX_JSTOKEN is set: ${{ secrets.TERABOX_JSTOKEN != '' }}"
-          echo "  TERABOX_BDSTOKEN is set: ${{ secrets.TERABOX_BDSTOKEN != '' }} (optional but recommended)"
+          echo "Playwright upload method:"
           echo "  TERABOX_COOKIE is set: ${{ secrets.TERABOX_COOKIE != '' }}"
           echo "Notification configuration:"
           echo "  DINGDING_WEBHOOK is set: ${{ secrets.DINGDING_WEBHOOK != '' }}"
@@ -62,13 +71,11 @@ jobs:
       - name: Run recorder
         env:
           RTSP_URL: ${{ secrets.RTSP_URL }}
-          TERABOX_JSTOKEN: ${{ secrets.TERABOX_JSTOKEN }}
-          TERABOX_BDSTOKEN: ${{ secrets.TERABOX_BDSTOKEN }}
           TERABOX_COOKIE: ${{ secrets.TERABOX_COOKIE }}
           TERABOX_REMOTE_FOLDER: ${{ vars.TERABOX_REMOTE_FOLDER || '/rtsp-videos' }}
           DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         run: |
-          chmod +x ./record.sh ./terabox_upload_simple.sh
+          chmod +x ./record.sh
           ./record.sh
 
       # 🔍 失败时把 tailscaled 日志打出来，快速定位（非常有用）
@@ -81,3 +88,13 @@ jobs:
           else
             echo "tailscaled.log not found"
           fi
+
+      # 📸 上传 Playwright 截图用于调试
+      - name: Upload Playwright screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots
+          path: /tmp/terabox-*.png
+          if-no-files-found: ignore
+          retention-days: 7
