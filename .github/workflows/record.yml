@@ -98,3 +98,20 @@ jobs:
           path: /tmp/terabox-*.png
           if-no-files-found: ignore
           retention-days: 7
+
+  auto-restart:
+    needs: record
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Trigger self
+        if: steps.gate.outputs.run == 'true'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: record.yml
+          ref: ${{ github.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+      
