@@ -99,13 +99,19 @@ async function uploadFile(filePath) {
     log('Launching Chromium...');
     browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process'
+      ]
     });
 
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
-      locale: 'en-US'
+      locale: 'en-US',
+      bypassCSP: true
     });
 
     // Set cookies before navigation
@@ -114,10 +120,27 @@ async function uploadFile(filePath) {
 
     const page = await context.newPage();
 
-    // Enable console logging for debugging
+    // Enable console logging for debugging (limit noise from repeated errors)
+    let consoleErrorCount = 0;
     page.on('console', msg => {
       if (msg.type() === 'error') {
-        log(`Browser console error: ${msg.text()}`);
+        consoleErrorCount++;
+        if (consoleErrorCount <= 5) {
+          log(`Browser console error: ${msg.text()}`);
+        } else if (consoleErrorCount === 6) {
+          log(`Browser console error: (suppressing further errors, count: ${consoleErrorCount})`);
+        }
+      }
+    });
+
+    // Track failed upload requests to detect CORS/network issues
+    let uploadFailCount = 0;
+    page.on('requestfailed', request => {
+      const url = request.url();
+      if (url.includes('superfile2') || url.includes('pcs/file')) {
+        uploadFailCount++;
+        const failure = request.failure();
+        log(`Upload request failed: ${failure ? failure.errorText : 'unknown'} - ${url.substring(0, 120)}...`);
       }
     });
 
@@ -163,6 +186,23 @@ async function uploadFile(filePath) {
       const folderUrl = `https://www.terabox.com/main#/all?path=${encodeURIComponent(TERABOX_REMOTE_FOLDER)}`;
       await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForTimeout(3000);
+    }
+
+    // Validate page loaded correctly before proceeding
+    log('Validating page load...');
+    const currentUrl = page.url();
+    const pageTitle = await page.title();
+    const bodyLength = await page.evaluate(() => document.body.innerHTML.length);
+    log(`Page URL: ${currentUrl}`);
+    log(`Page title: ${pageTitle}`);
+    log(`Page body length: ${bodyLength} chars`);
+
+    if (!currentUrl.includes('terabox.com')) {
+      throw new Error(`Page redirected away from TeraBox: ${currentUrl}`);
+    }
+
+    if (bodyLength < 1000) {
+      throw new Error(`Page did not load properly (body length: ${bodyLength} chars). Possible network issue.`);
     }
 
     // Find and click the upload button
@@ -233,6 +273,17 @@ async function uploadFile(filePath) {
           await fileInput.setInputFiles(absolutePath);
           log('File selected via hidden input');
         } else {
+          // Dump debug info before throwing
+          const debugUrl = page.url();
+          const debugTitle = await page.title();
+          const debugBodyLen = await page.evaluate(() => document.body.innerHTML.length);
+          const debugVisibleText = await page.evaluate(() => document.body.innerText.substring(0, 500));
+          log(`DEBUG - Current URL: ${debugUrl}`);
+          log(`DEBUG - Page title: ${debugTitle}`);
+          log(`DEBUG - Body length: ${debugBodyLen} chars`);
+          log(`DEBUG - Visible text (first 500 chars): ${debugVisibleText}`);
+          await page.screenshot({ path: '/tmp/terabox-no-upload-element.png', fullPage: true });
+          log('DEBUG - Screenshot saved to /tmp/terabox-no-upload-element.png');
           throw new Error('Could not find any upload mechanism');
         }
       }
@@ -248,30 +299,53 @@ async function uploadFile(filePath) {
     // Monitor for upload progress/completion (adjust timeout based on file size)
     const uploadTimeout = Math.max(120000, fileSize / 1000); // At least 2 minutes, or 1ms per KB
 
-    try {
-      // Wait for upload success indicator or progress bar to disappear
-      await page.waitForFunction(() => {
-        // Check for success indicators
-        const successIndicators = [
-          document.querySelector('[class*="upload-success"]'),
-          document.querySelector('[class*="complete"]'),
-          document.querySelector('.upload-status.success')
-        ];
+    // Poll for completion: check both DOM indicators and request failures
+    const pollInterval = 3000;
+    const startTime = Date.now();
+    let uploadComplete = false;
 
-        // Check if upload progress bar is gone (upload finished)
+    while (Date.now() - startTime < uploadTimeout) {
+      // Check if upload requests are failing (CORS or network issue)
+      if (uploadFailCount > 5) {
+        throw new Error(`Upload failed: ${uploadFailCount} upload requests failed (likely CORS or network issue)`);
+      }
+
+      // Check DOM for completion indicators
+      const status = await page.evaluate(() => {
+        const successEl = document.querySelector('[class*="upload-success"]') ||
+                          document.querySelector('[class*="complete"]') ||
+                          document.querySelector('.upload-status.success');
+        if (successEl) return 'success';
+
         const progressBar = document.querySelector('[class*="progress"]');
         const uploadingIndicator = document.querySelector('[class*="uploading"]');
+        if (!progressBar && !uploadingIndicator) return 'no-indicator';
 
-        return successIndicators.some(el => el) ||
-               (!progressBar && !uploadingIndicator);
-      }, { timeout: uploadTimeout });
+        return 'uploading';
+      });
 
-      log('Upload appears to be complete');
-    } catch (timeoutError) {
-      // Take screenshot before checking final state
+      if (status === 'success') {
+        log('Upload success indicator found');
+        uploadComplete = true;
+        break;
+      }
+
+      if (status === 'no-indicator' && Date.now() - startTime > 10000) {
+        // No upload indicators after 10s - likely finished or never started
+        log('No upload indicators found after waiting');
+        uploadComplete = true;
+        break;
+      }
+
+      await page.waitForTimeout(pollInterval);
+    }
+
+    if (!uploadComplete) {
       await page.screenshot({ path: '/tmp/terabox-upload-timeout.png' });
       log('Upload wait timed out, checking final state...');
     }
+
+    log(`Console errors: ${consoleErrorCount}, Upload request failures: ${uploadFailCount}`);
 
     // Take final screenshot
     await page.screenshot({ path: '/tmp/terabox-after-upload.png' });
@@ -303,13 +377,6 @@ async function uploadFile(filePath) {
 
   } catch (error) {
     log(`ERROR: Upload failed - ${error.message}`);
-
-    // Send DingTalk notification
-    await sendDingTalkNotification(
-      'TeraBox Playwright 上传失败',
-      `**文件名:** \`${fileName}\`\n\n**文件大小:** ${fileSizeMB} MB\n\n**错误信息:** ${error.message}\n\n**目标路径:** ${TERABOX_REMOTE_FOLDER}/`
-    );
-
     success = false;
   } finally {
     if (browser) {
@@ -319,6 +386,34 @@ async function uploadFile(filePath) {
   }
 
   return success;
+}
+
+// Upload with retry logic
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [10000, 30000]; // delays before 2nd and 3rd attempt
+
+async function uploadFileWithRetry(filePath) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    log(`Upload attempt ${attempt}/${MAX_RETRIES} for ${path.basename(filePath)}`);
+
+    const result = await uploadFile(filePath);
+    if (result) {
+      return true;
+    }
+
+    if (attempt < MAX_RETRIES) {
+      const delay = RETRY_DELAYS[attempt - 1];
+      log(`Attempt ${attempt} failed. Waiting ${delay / 1000}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  log(`All ${MAX_RETRIES} attempts failed for ${path.basename(filePath)}`);
+  await sendDingTalkNotification(
+    'TeraBox 上传最终失败',
+    `**文件名:** \`${path.basename(filePath)}\`\n\n**重试次数:** ${MAX_RETRIES}\n\n**目标路径:** ${TERABOX_REMOTE_FOLDER}/`
+  );
+  return false;
 }
 
 // Main entry point
@@ -350,11 +445,11 @@ async function main() {
     log('');
     log(`Processing file ${successCount + 1}/${totalCount}: ${path.basename(filePath)}`);
 
-    if (await uploadFile(filePath)) {
+    if (await uploadFileWithRetry(filePath)) {
       successCount++;
       log('Upload completed successfully');
     } else {
-      log('Upload failed');
+      log('Upload failed after all retries');
     }
   }
 
